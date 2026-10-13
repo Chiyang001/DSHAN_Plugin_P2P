@@ -93,7 +93,9 @@ async function pairingRequest(url, options, address) {
       request.end(options.body);
     });
   } catch (error) {
-    const reason = error.cause?.code || error.code || error.name;
+    const detail = error.cause || error;
+    const timedOut = options.signal?.reason?.name === 'TimeoutError' || error.name === 'TimeoutError' || ['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(detail.code);
+    const reason = timedOut ? '请求超时' : detail.code === 'ECONNRESET' ? '连接被重置' : error.name === 'AbortError' || detail.code === 'ABORT_ERR' ? '请求已取消' : detail.code || error.name;
     throw new Error(`无法访问配对服务器 ${new URL(url).host}（${reason}），请检查网络和服务器入口。`, { cause: error });
   }
 }

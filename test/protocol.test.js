@@ -52,3 +52,12 @@ test('pair registration failures include the server HTTP status', async t => {
   const pair = createPair(`ws://127.0.0.1:${server.address().port}`);
   await assert.rejects(registerShortPair(pair, AbortSignal.timeout(3000)), /HTTP 503/);
 });
+
+test('request deadline is reported as timeout instead of numeric DOM exception code', async t => {
+  const { createServer } = await import('node:http');
+  const server = createServer(() => {});
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
+  const pair = createPair(`ws://127.0.0.1:${server.address().port}`);
+  await assert.rejects(registerShortPair(pair, AbortSignal.timeout(50)), /请求超时/);
+});

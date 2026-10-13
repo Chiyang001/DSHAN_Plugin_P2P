@@ -83,7 +83,7 @@ npm ci --omit=dev --ignore-scripts
 
 可另外配置 STUN/TURN。已有连接中的操作失败不会自动切换通道重试，避免重复执行。
 
-默认使用域名解析，不要将特定网络下的 IP 写为通用默认值。`signalingAddress` 可用于明确需要的固定 IP 场景，保留域名 Host 和 HTTPS 证书验证。HTTP 注册和查询也支持该配置。
+默认使用域名解析，不要将特定网络下的 IP 写为通用默认值。已有安装若配置过 `signalingAddress`，请确认该 IP 在当前网络中可用；域名正常但固定 IP 连接重置或超时时，移除这一项并重启 Harness。`signalingAddress` 可用于明确需要的固定 IP 场景，保留域名 Host 和 HTTPS 证书验证。HTTP 注册和查询也支持该配置。
 
 公网推荐 `wss://`；用户明确使用 HTTP/FRP 时可配置 `ws://`，工具调用需显式设置 `allow_http_signaling: true`。信令可见连接元数据，工具数据使用端到端加密。
 
