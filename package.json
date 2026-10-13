@@ -1,0 +1,69 @@
+{
+  "name": "dsh-peer",
+  "version": "0.1.4",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "signal": "node signal-server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4",
+    "werift": "0.25.0",
+    "ws": "8.22.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "^0.1.7-rc.2 || ^0.2.0-rc.2"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "peer.js",
+    "protocol.js",
+    "network.js",
+    "relay.js",
+    "dtls-compat.js",
+    "cordis.patch.yml",
+    "signal-server.js"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "external": [
+        "react",
+        "react-dom",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "author": "炽阳001",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Chiyang001/DSHAN_Plugin_P2P.git"
+  },
+  "homepage": "https://github.com/Chiyang001/DSHAN_Plugin_P2P",
+  "description": "DeepSeek Harness 与 DSHAN 手机的双向工具配对插件，支持 WebRTC 直连和端到端加密中继。",
+  "bugs": {
+    "url": "https://github.com/Chiyang001/DSHAN_Plugin_P2P/issues"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-app-boot": "0.1.7-rc.2",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-scope": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.2"
+  }
+}
