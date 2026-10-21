@@ -95,7 +95,7 @@ export function apply(ctx, config = {}) {
     const hostAddresses = await androidHostAddresses(exec.signal);
     await stop();
     allowed = new Set(policy.names); shareAll = policy.all;
-    peer = new Peer({ pair, role, iceServers, hostAddresses, relayOnly: config.relayOnly === true, dispatch });
+    peer = new Peer({ pair, role, iceServers, hostAddresses, refreshHostAddresses: () => androidHostAddresses(), relayOnly: config.relayOnly === true, dispatch });
   };
   const status = () => ({
     ...(peer?.status() ?? { state: 'disconnected' }),

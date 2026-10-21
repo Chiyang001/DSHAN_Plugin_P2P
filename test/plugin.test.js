@@ -57,7 +57,9 @@ test('device sharing survives session deletion while enforcing allowlist and loc
   assert.equal(output.content[1].type, 'image');
   assert.equal(phone.saved[0].data.subarray(1, 4).toString(), 'PNG');
   await desktop.call('peer_join', { code, tools: '' });
-  for (let i = 0; i < 100; i++) {
+  // Auto mode may need its 8-second relay fallback on busy or restricted hosts.
+  const connectionDeadline = Date.now() + 15000;
+  while (Date.now() < connectionDeadline) {
     if (JSON.parse(await desktop.call('peer_status')).state === 'connected') break;
     await new Promise(resolve => setTimeout(resolve, 50));
   }

@@ -158,7 +158,8 @@ window.__ModuleLoader__.load({
         minWidth: 0,
       }
       const pairingCard = (title, description, ...children) => h('section', { style: cardStyle }, text(title, description), ...children)
-      const statusLabel = connected ? '已连接' : hosting ? '等待配对' : active ? '连接中' : '未连接'
+      const reconnecting = state?.state === 'reconnecting'
+      const statusLabel = reconnecting ? '正在重连' : connected ? '已连接' : hosting ? '等待配对' : active ? '连接中' : '未连接'
       return h('div', { style: { maxWidth: 880, width: '100%', minWidth: 0, display: 'grid', gap: 16 } },
         h('section', { style: cardStyle },
           h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' } },
@@ -166,11 +167,11 @@ window.__ModuleLoader__.load({
             h('span', { role: 'status', style: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 } },
               h('span', { style: { width: 8, height: 8, borderRadius: '50%', background: connected ? '#22a06b' : active || hosting ? '#d59b32' : '#888' } }), statusLabel)),
           row(isAndroid ? '手机与电脑互联' : '连接手机或其他电脑',
-            connected ? `已连接${remote}，可在会话中调用对方共享的工具。` : hosting ? '配对码已生成，等待另一台设备扫码或输入。' : active ? `正在连接${remote}，请保持两端在线…` : isAndroid ? '扫描电脑上的二维码，或输入电脑生成的 8 位配对码。' : '在此生成配对码，让手机扫码连接；也可以输入另一台设备的配对码。',
-            (active || hosting) && h(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: () => post('disconnect') }, connected ? '断开连接' : '取消配对')),
+            reconnecting ? '网络已中断，正在自动重连；恢复网络后无需重新配对。' : connected ? `已连接${remote}，可在会话中调用对方共享的工具。` : hosting ? '配对码已生成，等待另一台设备扫码或输入。' : active ? `正在连接${remote}，请保持两端在线…` : isAndroid ? '扫描电脑上的二维码，或输入电脑生成的 8 位配对码。' : '在此生成配对码，让手机扫码连接；也可以输入另一台设备的配对码。',
+            (active || hosting) && h(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: () => post('disconnect') }, connected || reconnecting ? '断开连接' : '取消配对')),
           connected && row('连接方式', state.transport?.includes('relay') ? '加密中继连接' : 'P2P 直接连接', h('span', { className: 'Pt1bsG_description' }, '已加密'))),
         (error || state?.error) && h('div', { role: 'alert', style: { ...cardStyle, color: 'var(--dsw-alias-state-error-primary, #d43b3b)', overflowWrap: 'anywhere' } }, error || state.error),
-        (canPair || hosting && !connected) && h('div', { style: { display: 'grid', gap: 16 } },
+        (canPair || hosting && !connected && !reconnecting) && h('div', { style: { display: 'grid', gap: 16 } },
           pairingCard('创建配对', isAndroid ? '生成本机配对码，供电脑或其他设备输入。' : '生成配对码后，在手机的「设置 → 连接」中扫码或输入。',
             h('div', { style: { marginTop: 16 } }, h(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: () => post('host', { allowHttp: true }) }, hosting ? '重新生成配对码' : '创建配对码')),
             hosting && h(React.Fragment, null,
