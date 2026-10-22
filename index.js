@@ -6,6 +6,7 @@ import { androidHostAddresses } from './network.js';
 import { isIP } from 'node:net';
 import QRCode from 'qrcode';
 import { LinkedMessages } from './messages.js';
+import { installNativeMessages } from './native-messages.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,6 +41,8 @@ export function apply(ctx, config = {}) {
     controller: () => ctx.get('sessionController'), peer: () => peer,
     label: process.env.DSH_ANDROID_BRIDGE_TOKEN ? 'Android 手机' : '电脑',
   });
+  linked.uploads = () => ctx.get('fileUploads');
+  ctx.inject(['sessionController'], scope => { if (!ctx.get('sessionController')) return; const dispose = installNativeMessages(scope, linked); scope.on('dispose', dispose); });
   ctx.on('session/event', (session, event) => linked.observeEvent(session.id, event), { global: true });
   ctx.on('agent/assistant-stream', ({ agent, frame }) => linked.observeStream(agent.session.id, frame), { global: true });
   const callableTools = agent => ctx.tools.schemas(agent).filter(tool => !tool.name.startsWith('peer_') && tool.name !== 'run_code' && ctx.tools.resolveExecution(tool.name, agent, false));

@@ -49,7 +49,7 @@ test('registers the connection settings section', () => {
   })
   assert.deepEqual(
     slots.map(({ options }) => `${options.name}#${options.id}`),
-    ['settings.section#connection', 'sidebar.panellist#peer-messages', 'main#undefined'],
+    ['settings.section#connection', 'sidebar.panellist#peer-messages', 'main#undefined', 'conversation.session.header.actions#peer-linked-status'],
   )
   assert.equal(slots[0].options.label(), '连接')
   assert.equal(slots[1].options.label(), '联动消息')

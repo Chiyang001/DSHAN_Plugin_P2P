@@ -162,3 +162,19 @@ test('history is paginated and credentials/system headers are excluded from sync
   assert.equal(visibleEvent({ seq: 1, type: 'request/header', data: { apiKey: 'secret' } }), null);
   assert.doesNotMatch(await readFile(left.file, 'utf8'), /private system prompt/);
 });
+
+test('native operations stay on the selected owner and preserve attachments and request identities', async t => {
+  const { left, right, a } = await fixture(t);
+  const { id } = await left.action({ action: 'create' }); await until(() => right.data.chats[id]);
+  const requests = [];
+  a.selectModel = async request => { requests.push(request); return { selected: true }; };
+  const response = await right.nativeCall(right.data.chats[id], 'selectModel', { sessionId: 'unshared-private-id', provider: 'test', model: 'shared', reasoningEffort: 'high' });
+  assert.equal(response.selected, true); assert.equal(requests[0].sessionId, left.data.chats[id].sessionId);
+  await assert.rejects(right.nativeCall(right.data.chats[id], 'inspect', { sessionId: 'unshared-private-id' }), /未授权/);
+  const requestId = randomUUID(), content = [{ type: 'text', text: 'native composer' }, { type: 'image', mediaType: 'image/png', data: 'aQ==' }];
+  await right.action({ action: 'send', id, requestId, text: 'native composer', content, mode: 'steer', clientTimeZone: 'Asia/Shanghai' });
+  await until(() => a.calls.length === 1); assert.deepEqual(a.calls[0].content, content); assert.equal(a.calls[0].mode, 'steer');assert.equal(a.calls[0].clientTimeZone,'Asia/Shanghai');
+  await until(() => !right.data.outbox[requestId]);
+  await right.action({ action: 'send', id, requestId, text: 'native composer', content });
+  await until(() => right.data.outbox[requestId]?.status === 'accepted' || !right.data.outbox[requestId]);assert.equal(a.calls.length,1);
+});

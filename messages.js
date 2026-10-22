@@ -3,7 +3,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 const ID = /^[a-zA-Z0-9_-]{1,120}$/;
-const TYPES = new Set(['user/message', 'assistant/message', 'assistant/attempt', 'tool/call', 'tool/result', 'turn/start', 'turn/end', 'inbox/queued', 'inbox/removed', 'inbox/claimed']);
+const TYPES = new Set(['user/message', 'assistant/message', 'assistant/attempt', 'tool/call', 'tool/result', 'turn/start', 'turn/end', 'model/selection', 'inbox/queued', 'inbox/removed', 'inbox/claimed']);
 const clone = value => JSON.parse(JSON.stringify(value));
 export function visibleEvent(event) {
   if (!event || !Number.isSafeInteger(event.seq) || !TYPES.has(event.type)) return null;
@@ -90,6 +90,10 @@ export class LinkedMessages {
     return Object.values(this.data.receipts).filter(item => item.chatId === chat.id && !ids.has(item.requestId))
       .map(({ requestId, text, status, error }) => ({ requestId, text, status, error }));
   }
+  async nativeCall(chat, method, request, signal) {
+    if (this.peer()?.state !== 'connected' || this.remoteId !== chat.owner) throw Error('执行设备离线，连接恢复后可继续此操作');
+    return this.peer().request('messages.native', { deviceId: this.data.deviceId, id: chat.id, method, request }, signal);
+  }
   async dispatch(method, args = {}, signal) {
     await this.init();
     if (method === 'messages.hello') {
@@ -101,6 +105,20 @@ export class LinkedMessages {
     if (!this.remoteId || args.deviceId !== this.remoteId) throw new Error('联动消息身份尚未确认');
     if (method === 'messages.index') return Object.values(this.data.chats).filter(chat => chat.owner === this.data.deviceId && chat.members.includes(this.remoteId)).map(chat => this.meta(chat));
     const chat = this.ownChat(args.id, true);
+    if (method === 'messages.native') {
+      if (!['selectModel', 'rename', 'updateQueue', 'cancel', 'attachment', 'upload', 'modelCatalog'].includes(args.method)) throw Error('未授权的联动会话操作');
+      if (args.method === 'upload') {
+        const request = args.request ?? {};
+        if (typeof request.data !== 'string' || request.data.length > 12 * 1024 * 1024) throw Error('联动附件过大');
+        const bytes = Buffer.from(request.data, 'base64');
+        const uploads = this.uploads?.(); if (!uploads) throw Error('执行设备暂不支持附件上传');
+        return uploads.uploadStream({ sessionId: chat.sessionId, data: (async function* () { yield bytes; })(), name: request.name, signal });
+      }
+      if (args.method === 'modelCatalog') return this.controller().modelCatalog();
+      const result = await this.controller()[args.method]({ ...args.request, sessionId: chat.sessionId }, signal);
+      if (args.method === 'selectModel' || args.method === 'rename') { await this.refreshNative(chat); chat.version++; this.touch(); }
+      return result;
+    }
     if (method === 'messages.read') {
       const after = Number.isSafeInteger(args.after) ? args.after : -1;
       const all = chat.events.filter(event => event.seq > after);
@@ -111,10 +129,10 @@ export class LinkedMessages {
         if (size > 8 * 1024 * 1024) throw new Error('单条消息过大，暂时无法同步');
         events.push(event); bytes += size;
       }
-      return { ...this.meta(chat), events, queued: this.pending(chat), live: chat.live ?? '', running: !!chat.running, error: chat.error ?? null,
+      return { ...this.meta(chat), nativeProjections: chat.nativeProjections, nativeCatalog: chat.nativeCatalog, events, queued: this.pending(chat), live: chat.live ?? '', running: !!chat.running, error: chat.error ?? null,
         hasMore: events.length < all.length, through: events.at(-1)?.seq ?? after };
     }
-    if (method === 'messages.send') return this.admit(chat, args.requestId, args.text, signal);
+    if (method === 'messages.send') return this.admit(chat, args.requestId, args.text, signal, args);
     if (method === 'messages.receipt') return this.data.receipts[args.requestId]?.chatId === chat.id ? this.data.receipts[args.requestId] : null;
     if (method === 'messages.cancel') return this.controller().cancel({ sessionId: chat.sessionId });
     if (method === 'messages.attachment') return this.controller().attachment({ sessionId: chat.sessionId, attachmentId: args.attachmentId });
@@ -132,6 +150,7 @@ export class LinkedMessages {
         if (!ID.test(hello.deviceId ?? '') || hello.version !== 1) throw new Error('对端需要更新联动消息插件');
         this.remoteId = hello.deviceId; this.remoteLabel = hello.label; this.touch(false);
       }
+      for (const chat of Object.values(this.data.chats)) if (chat.owner === this.data.deviceId && !chat.removed && chat.members.includes(this.remoteId)) await this.refreshNative(chat);
       const rows = await peer.request('messages.index', { deviceId: this.data.deviceId });
       if (!current()) return;
       if (!Array.isArray(rows) || rows.length > 1000) throw new Error('Invalid linked-message index');
@@ -149,7 +168,7 @@ export class LinkedMessages {
         const events = new Map(chat.events.map(event => [event.seq, event]));
         for (const raw of result.events) { const event = visibleEvent(raw); if (event) events.set(event.seq, event); }
         Object.assign(chat, this.meta(result), { events: [...events.values()].sort((a,b) => a.seq-b.seq),
-          queued: result.queued ?? [], live: String(result.live ?? ''), running: !!result.running, error: result.error,
+          nativeProjections: result.nativeProjections, nativeCatalog: result.nativeCatalog, queued: result.queued ?? [], live: String(result.live ?? ''), running: !!result.running, error: result.error,
           through: result.through, syncedVersion: result.version, syncing: !!result.hasMore });
         this.data.chats[chat.id] = chat; this.reconcile(chat); this.touch(durableChanged);
       }
@@ -157,6 +176,17 @@ export class LinkedMessages {
       for (const item of Object.values(this.data.outbox)) if (item.status === 'pending' && current()) await this.deliver(item);
     } catch (error) { if (current()) { const text = /Invalid remote tool call/.test(error.message) ? '对端插件暂不支持联动消息，请更新两端插件' : error.message; if (this.error !== text) { this.error = text; this.touch(false); } } }
     finally { this.pumping = false; }
+  }
+  async refreshNative(chat) {
+    if (!this.controller().projections) return;
+    try {
+      const baseline = await this.controller().projections({ sessionId: chat.sessionId }, AbortSignal.timeout(10000));
+      const allowed = ['modelSelection', 'title', 'sessionListMetadata', 'imageLimits', 'inbox', 'plan', 'permissions', 'agentPreset'];
+      const values = Object.fromEntries(Object.entries(baseline?.values ?? {}).filter(([key]) => allowed.includes(key)));
+      const next = { asOfSeq: baseline?.asOfSeq ?? -1, values };
+      if (JSON.stringify(chat.nativeProjections) !== JSON.stringify(next)) { chat.nativeProjections = next; chat.version++; this.touch(); }
+      if (!chat.nativeCatalog && this.controller().modelCatalog) { chat.nativeCatalog = await this.controller().modelCatalog(); chat.version++; this.touch(); }
+    } catch (error) { chat.error = error.message; }
   }
   observeEvent(sessionId, raw) {
     if (!this.data) return;
@@ -190,22 +220,22 @@ export class LinkedMessages {
     const ids = new Set(chat.events.map(promptId).filter(Boolean));
     for (const item of Object.values(this.data.outbox)) if (item.chatId === chat.id && ids.has(item.requestId)) delete this.data.outbox[item.requestId];
   }
-  async admit(chat, requestId, text, signal = AbortSignal.timeout(30000)) {
-    if (!ID.test(requestId ?? '') || typeof text !== 'string' || !text.trim() || text.length > 64000) throw new Error('消息为空或过长');
+  async admit(chat, requestId, text, signal = AbortSignal.timeout(30000), prompt = {}) {
+    if (!ID.test(requestId ?? '') || typeof text !== 'string' || (!text.trim() && !prompt.content?.length) || text.length > 64000) throw new Error('消息为空或过长');
     const task = async () => {
       const receipt = this.data.receipts[requestId];
       if (receipt) {
-        if (receipt.chatId !== chat.id || receipt.text !== text) throw new Error('消息标识已被其他内容使用');
+        if (receipt.chatId !== chat.id || receipt.text !== text || JSON.stringify(receipt.content) !== JSON.stringify(prompt.content)) throw new Error('消息标识已被其他内容使用');
         if (receipt.status === 'accepted') return { accepted: true, requestId };
         // An interrupted admission is never guessed safe to replay.
         throw new Error('该消息的执行结果尚未确认，请在执行设备检查后再发送新消息');
       }
       signal.throwIfAborted();
-      this.data.receipts[requestId] = { chatId: chat.id, requestId, text, status: 'admitting' };
+      this.data.receipts[requestId] = { chatId: chat.id, requestId, text, content: prompt.content, status: 'admitting' };
       chat.version++; this.touch(false);
       await this.save();
       try {
-        await this.controller().prompt({ sessionId: chat.sessionId, requestId, mode: 'queue', content: [{ type: 'text', text }] }, signal);
+        await this.controller().prompt({ sessionId: chat.sessionId, requestId, mode: prompt.mode === 'steer' ? 'steer' : 'queue', content: prompt.content ?? [{ type: 'text', text }], ...(prompt.clientTimeZone ? { clientTimeZone: prompt.clientTimeZone } : {}) }, signal);
         this.data.receipts[requestId].status = 'accepted'; chat.version++; await this.save(); this.touch();
         return { accepted: true, requestId };
       } catch (error) { this.data.receipts[requestId].error = error.message; await this.save(); throw error; }
@@ -217,8 +247,8 @@ export class LinkedMessages {
     if (chat.owner !== this.data.deviceId && (this.peer()?.state !== 'connected' || this.remoteId !== chat.owner)) return;
     item.status = 'sending'; await this.save(); this.touch(false);
     try {
-      if (chat.owner === this.data.deviceId) await this.admit(chat, item.requestId, item.text);
-      else await this.peer().request('messages.send', { deviceId: this.data.deviceId, id: chat.id, requestId: item.requestId, text: item.text });
+      if (chat.owner === this.data.deviceId) await this.admit(chat, item.requestId, item.text, undefined, item);
+      else await this.peer().request('messages.send', { deviceId: this.data.deviceId, id: chat.id, requestId: item.requestId, text: item.text, content: item.content, mode: item.mode, clientTimeZone: item.clientTimeZone });
       if (this.data.outbox[item.requestId]) item.status = 'accepted';
     } catch (error) { if (this.data.outbox[item.requestId]) { item.status = 'uncertain'; item.error = error.message; } }
     this.reconcile(chat); await this.save(); this.touch(false);
@@ -229,7 +259,7 @@ export class LinkedMessages {
     return { available: true, deviceId: this.data.deviceId, label: this.label, remoteId: this.remoteId, remoteLabel: this.remoteLabel,
       connection: this.peer()?.state ?? 'disconnected', error: this.error ?? null,
       chats: Object.values(this.data.chats).filter(chat => !chat.removed).map(chat => ({ ...this.meta(chat),
-        local: chat.owner === this.data.deviceId, running: !!chat.running, syncing: !!chat.syncing })).sort((a,b) => b.updatedAt-a.updatedAt) };
+        pendingCount: Object.values(this.data.outbox).filter(item => item.chatId === chat.id).length, uncertainIds: Object.values(this.data.outbox).filter(item => item.chatId === chat.id && item.status === 'uncertain').map(item => item.requestId), local: chat.owner === this.data.deviceId, running: !!chat.running, syncing: !!chat.syncing })).sort((a,b) => b.updatedAt-a.updatedAt) };
   }
   async action(input) {
     await this.init();
@@ -264,10 +294,10 @@ export class LinkedMessages {
       chat.removed = true; chat.events = []; chat.live = ''; chat.version++; await this.save(); this.touch(false); return { ok: true };
     }
     if (input.action === 'send') {
-      if (!ID.test(input.requestId ?? '') || typeof input.text !== 'string' || !input.text.trim() || input.text.length > 64000) throw new Error('消息为空或过长');
+      if (!ID.test(input.requestId ?? '') || typeof input.text !== 'string' || (!input.text.trim() && !input.content?.length) || input.text.length > 64000 || JSON.stringify(input.content ?? []).length > 12 * 1024 * 1024) throw new Error('消息为空或过长');
       const existing = this.data.outbox[input.requestId];
-      if (existing && (existing.chatId !== chat.id || existing.text !== input.text)) throw new Error('重复消息标识');
-      const item = existing ?? { chatId: chat.id, requestId: input.requestId, text: input.text, status: 'pending', createdAt: Date.now() };
+      if (existing && (existing.chatId !== chat.id || existing.text !== input.text || JSON.stringify(existing.content) !== JSON.stringify(input.content))) throw new Error('重复消息标识');
+      const item = existing ?? { chatId: chat.id, requestId: input.requestId, text: input.text, content: input.content, mode: input.mode, clientTimeZone: input.clientTimeZone, status: 'pending', createdAt: Date.now() };
       if (existing) return { requestId: item.requestId, status: item.status };
       this.data.outbox[item.requestId] = item; await this.save(); this.touch(false);
       void this.deliver(item).catch(error => { this.error = error.message; this.touch(false); });
