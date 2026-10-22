@@ -2,6 +2,7 @@ window.__ModuleLoader__.load({
   id: 'dsh-peer',
   factory: (require) => {
     const React = require('react')
+    const { createPortal } = require('react-dom')
     const { Button } = require('@deepseek-ai/dsh-client-ui-primitives')
     const h = React.createElement
     const linkedRequest = async body => {
@@ -23,24 +24,58 @@ window.__ModuleLoader__.load({
       }, [])
       return [value, error]
     }
-    function LinkedMessagesPanel({ openConversation } = {}) {
+    function LinkedHistoryCategory({ wide, openConversation }) {
       const [overview, failure] = useLinkedOverview()
+      const [expanded, setExpanded] = React.useState(true)
       const [error, setError] = React.useState(''), [busy, setBusy] = React.useState(false)
-      const [sessions, setSessions] = React.useState(null), [shareId, setShareId] = React.useState('')
-      const run = async fn => { if (busy) return; setBusy(true); setError(''); try { await fn() } catch (error) { setError(error.message) } finally { setBusy(false) } }
-      const open = chat => run(() => openConversation(chat.local ? chat.sessionId : 'peer-linked-' + chat.id))
-      const create = () => run(async () => { const result = await linkedRequest({ action: 'create' }); const next = await linkedRequest(); const chat = next.chats.find(row => row.id === result.id); await openConversation(chat.sessionId) })
-      const share = () => run(async () => { await linkedRequest({ action: 'share', sessionId: shareId, title: sessions.find(item => item.sessionId === shareId)?.title }); setSessions(null) })
+      if (wide === false) return null
+      const run = async fn => { if (busy) return; setBusy(true); setError(''); try { await fn() } catch (failure) { setError(failure.message) } finally { setBusy(false) } }
+      const create = () => run(async () => { const result = await linkedRequest({ action: 'create' }); const next = await linkedRequest(); await openConversation(next.chats.find(chat => chat.id === result.id).sessionId) })
       const connected = overview?.connection === 'connected' && !!overview.remoteId
-      const muted = { color: 'var(--dsw-alias-label-secondary, #888)', fontSize: 13, lineHeight: 1.6 }
-      const button = (label, onClick, disabled) => h(Button, { type: 'button', onClick, disabled: busy || disabled, variant: 'outline', size: 'sm', style: { borderRadius: 999, paddingInline: 16 } }, label)
-      return h('section', { className: 'dsh-peer-linked-category', style: { height: '100%', overflow: 'auto', padding: 'clamp(16px, 4vw, 36px)', boxSizing: 'border-box' } },
-        h('header', { style: { maxWidth: 880, margin: '0 auto 24px' } }, h('h2', null, '联动消息'), h('p', { style: muted }, connected ? '手机与电脑共享的普通对话，消息实时同步。' : '已同步记录保存在本机，连接恢复后自动补齐。'),
-          h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } }, button('新建联动对话', create, !connected), button('加入已有对话', () => run(async () => setSessions(await linkedRequest({ action: 'sessions' }))), !connected))),
-        (error || failure || overview?.error) && h('p', { role: 'alert', style: muted }, error || failure || overview.error),
-        sessions && h('div', { style: { maxWidth: 880, margin: '0 auto 20px', display: 'flex', gap: 10, flexWrap: 'wrap' } },
-          h('select', { 'aria-label': '选择本机对话', value: shareId, onChange: event => setShareId(event.target.value), style: { maxWidth: '100%', borderRadius: 12, padding: 10 } }, h('option', { value: '' }, '选择本机对话'), ...sessions.map(item => h('option', { key: item.sessionId, value: item.sessionId }, item.title))), button('加入联动消息', share, !shareId), button('取消', () => setSessions(null))),
-        h('div', { style: { maxWidth: 880, margin: 'auto', display: 'grid', gap: 10 } }, ...(overview?.chats || []).map(chat => h('button', { type: 'button', key: chat.id, onClick: () => open(chat), style: { textAlign: 'left', color: 'inherit', background: 'var(--dsw-alias-bg-layer-1, transparent)', border: '1px solid var(--dsw-alias-border-general, #8884)', borderRadius: 18, padding: '18px 20px', cursor: 'pointer' } }, h('strong', null, chat.title), h('div', { style: { ...muted, marginTop: 6 } }, chat.running ? '正在回复 · 点击继续对话' : '点击打开对话', chat.syncing ? ' · 正在补齐记录' : ''))), overview?.chats.length === 0 && h('p', { style: muted }, '仅加入本分类的对话会同步。')))
+      return h('section', { className: 'dsh-peer-linked-history', 'aria-label': '联动消息', style: { flex: '0 1 auto', minHeight: 36, maxHeight: '45%', display: 'flex', flexDirection: 'column', marginTop: 8, padding: '0 6px 6px', color: 'inherit' } },
+        h('style', null, '.dsh-peer-linked-history button{font:inherit;color:inherit;cursor:pointer}.dsh-peer-linked-history .dsh-peer-linked-row:hover{background:var(--dsw-alias-bg-active,rgba(128,128,128,.1))}.dsh-peer-linked-history button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#6389df);outline-offset:2px}.dsh-peer-linked-history button:disabled{opacity:.4;cursor:default}'),
+        h('div', { style: { display: 'flex', alignItems: 'center', minHeight: 36, gap: 4 } },
+          h('button', { type: 'button', 'aria-expanded': expanded, 'aria-controls': 'dsh-peer-linked-history-list', onClick: () => setExpanded(value => !value), style: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, background: 'none', border: 0, padding: '8px 6px', fontSize: 14, fontWeight: 600, textAlign: 'left', color: 'var(--dsw-alias-label-secondary,inherit)' } },
+            h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true }, h('path', { d: expanded ? 'm4 6 4 4 4-4' : 'm6 4 4 4-4 4' })), '联动消息'),
+          h('button', { type: 'button', 'aria-label': '新建联动对话', title: connected ? '新建联动对话' : '连接另一台设备后可新建联动对话', disabled: busy || !connected, onClick: create, style: { width: 28, height: 28, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'none' } }, h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true }, h('path', { d: 'M8 3v10M3 8h10' })))),
+        expanded && h('div', { id: 'dsh-peer-linked-history-list', style: { overflowY: 'auto', minHeight: 0 } },
+          ...(overview?.chats || []).map(chat => h('button', { type: 'button', className: 'dsh-peer-linked-row', key: chat.id, title: chat.title, onClick: () => run(() => openConversation(chat.local ? chat.sessionId : 'peer-linked-' + chat.id)), style: { display: 'flex', width: '100%', alignItems: 'center', gap: 8, textAlign: 'left', padding: '9px 12px 9px 28px', border: 0, borderRadius: 8, background: 'transparent', boxSizing: 'border-box', fontSize: 14 } }, h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, chat.title), chat.running && h('span', { title: '正在回复', 'aria-label': '正在回复', style: { width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 } }))),
+          overview?.chats.length === 0 && h('p', { style: { margin: '4px 12px 10px 28px', fontSize: 12, opacity: .6 } }, '暂无联动消息')),
+        (error || failure) && h('p', { role: 'alert', style: { margin: '4px 8px', fontSize: 12, overflowWrap: 'anywhere' } }, error || failure))
+    }
+    // Keep the upstream browser's entry, stores, menus and slot declarations.
+    // The portal adds one history group inside its existing browsing region.
+    function installLinkedHistory(ctx) {
+      const decorated = new Map()
+      const layout = ctx.get('layout')
+      if (layout?.panelInfo.getSnapshot().activePanelId === 'peer-messages') layout.selectPanel(null)
+      const openConversation = async sessionId => { await ctx.get('sessions')?.refresh(); ctx.get('uiWorkspace')?.openSession(sessionId) }
+      const refreshBrowser = () => {
+        // Pulse the public registration ledger so an already-mounted renderer
+        // observes the changed component; the native entry always stays elected.
+        const remove = ctx.slots.register({ name: 'sidebar.workspaces', priority: Number.MAX_SAFE_INTEGER }, () => null)
+        remove()
+      }
+      const decorate = () => {
+        let changed = false
+        for (const entry of ctx.slots.entriesOfSlot('sidebar.workspaces')) {
+          if (decorated.has(entry)) continue
+          const Original = entry.component
+          function HistoryWithLinkedCategory(props) {
+            const boundary = React.useRef(null)
+            const [target, setTarget] = React.useState(null)
+            React.useLayoutEffect(() => { const next = boundary.current?.firstElementChild; if (next !== target) setTarget(next || null) }, [props.wide, target])
+            return h('div', { ref: boundary, style: { display: 'contents' } }, h(Original, props), target && createPortal(h(LinkedHistoryCategory, { wide: props.wide, openConversation }), target))
+          }
+          decorated.set(entry, { Original, wrapper: HistoryWithLinkedCategory })
+          entry.component = HistoryWithLinkedCategory
+          changed = true
+        }
+        if (changed) refreshBrowser()
+      }
+      const unsubscribe = ctx.slots.subscribe('sidebar.workspaces', decorate)
+      decorate()
+      return () => { unsubscribe(); for (const [entry, { Original, wrapper }] of decorated) if (entry.component === wrapper) entry.component = Original; decorated.clear(); refreshBrowser() }
     }
     function LinkedConversationStatus({ sessionId } = {}) {
       const [overview] = useLinkedOverview()
@@ -60,11 +95,6 @@ window.__ModuleLoader__.load({
         (!chat || chat.local) && h(Button, { type: 'button', variant: 'outline', size: 'sm', disabled: busy || !chat && overview?.connection !== 'connected', onClick: action, style: { borderRadius: 999 } }, chat ? '停止共享' : '加入联动消息'),
         error && h('span', { role: 'alert' }, error))
     }
-    function LinkedMessagesIcon({ size = 18 }) {
-      return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
-        h('path', { d: 'M5 4h11a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3H9l-5 4V7a3 3 0 0 1 1-3Z' }), h('path', { d: 'm9 8 2-2 2 2m-2-2v6m3-1 2 2 2-2' }))
-    }
-
     const CODE_LENGTH = 8
     const CODE_RE = /^[A-HJ-NP-Z2-9]{8}$/
 
@@ -252,13 +282,7 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section', id: 'connection', order: 35, label: () => '连接',
         }, ConnectionSettings))
-        ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-          name: 'sidebar.panellist', id: 'peer-messages', order: 5, label: () => '联动消息',
-        }, LinkedMessagesIcon))
-        ctx.slots.inject('main', () => ctx.slots.register({
-          name: 'main', key: 'peer-messages',
-          inject: () => ({ openConversation: async sessionId => { await ctx.get('sessions')?.refresh(); ctx.get('uiWorkspace')?.openSession(sessionId) } }),
-        }, LinkedMessagesPanel))
+        ctx.slots.inject('sidebar.workspaces', () => installLinkedHistory(ctx))
         ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({ name: 'conversation.session.header.actions', id: 'peer-linked-status', order: 50 }, LinkedConversationStatus))
       },
     }
