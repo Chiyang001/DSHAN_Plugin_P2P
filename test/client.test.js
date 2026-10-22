@@ -115,7 +115,7 @@ test('linked conversations are a foldable history category and preserve the nati
   const portal=tree.children[1];assert.equal(portal.props.container,nativeContainer);
   mode='category';const group=portal.children.type(portal.children.props);assert.equal(group.props['aria-label'],'联动消息');
   const rows=flatten(group);assert.ok(rows.some(node=>node?.props?.['aria-expanded']===true));
-  const chat=rows.find(node=>node?.props?.className==='dsh-peer-linked-row');assert.ok(chat);await chat.props.onClick();assert.equal(refreshes,1);assert.deepEqual(opened,['peer-linked-remote-chat']);
+  const chat=rows.find(node=>node?.props?.className?.includes('dsh-peer-linked-row'));assert.ok(chat);await chat.props.onClick();assert.equal(refreshes,1);assert.deepEqual(opened,['peer-linked-remote-chat']);
   assert.equal(portal.children.type({...portal.children.props,wide:false}),null);
   for(const dispose of disposers.reverse())dispose();assert.equal(entry.component,NativeBrowser);
 });

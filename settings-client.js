@@ -28,19 +28,37 @@ window.__ModuleLoader__.load({
       const [overview, failure] = useLinkedOverview()
       const [expanded, setExpanded] = React.useState(true)
       const [error, setError] = React.useState(''), [busy, setBusy] = React.useState(false)
+      const region = React.useRef(null)
+      React.useLayoutEffect(() => {
+        const node = region.current, root = node?.parentElement
+        if (!root || document.documentElement.hasAttribute('data-codsh-theme')) return
+        let frame
+        const sync = () => {
+          frame = undefined
+          const copy = (source, targets, properties) => { if (!source) return; const computed = getComputedStyle(source); for (const target of targets) for (const property of properties) if (target.style[property] !== computed[property]) target.style[property] = computed[property] }
+          const fonts = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'color']
+          copy(root.querySelector('[class*="_sectionLabel"]'), node.querySelectorAll('.codsh-section-toggle'), fonts)
+          const row = root.querySelector('[class*="_sessionRow"]')
+          copy(row, node.querySelectorAll('.codsh-session'), [...fonts, 'height', 'minHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'marginTop', 'marginBottom', 'borderRadius'])
+          copy(row?.querySelector('[class*="_title"]'), node.querySelectorAll('.codsh-session > span:first-child'), fonts)
+        }
+        const observer = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(sync) })
+        observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] }); sync()
+        return () => { observer.disconnect(); if (frame) cancelAnimationFrame(frame) }
+      }, [wide, overview?.chats.length])
       if (wide === false) return null
       const run = async fn => { if (busy) return; setBusy(true); setError(''); try { await fn() } catch (failure) { setError(failure.message) } finally { setBusy(false) } }
       const create = () => run(async () => { const result = await linkedRequest({ action: 'create' }); const next = await linkedRequest(); await openConversation(next.chats.find(chat => chat.id === result.id).sessionId) })
       const connected = overview?.connection === 'connected' && !!overview.remoteId
-      return h('section', { className: 'dsh-peer-linked-history', 'aria-label': '联动消息', style: { flex: '0 1 auto', minHeight: 36, maxHeight: '45%', display: 'flex', flexDirection: 'column', marginTop: 8, padding: '0 6px 6px', color: 'inherit' } },
-        h('style', null, '.dsh-peer-linked-history button{font:inherit;color:inherit;cursor:pointer}.dsh-peer-linked-history .dsh-peer-linked-row:hover{background:var(--dsw-alias-bg-active,rgba(128,128,128,.1))}.dsh-peer-linked-history button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#6389df);outline-offset:2px}.dsh-peer-linked-history button:disabled{opacity:.4;cursor:default}'),
-        h('div', { style: { display: 'flex', alignItems: 'center', minHeight: 36, gap: 4 } },
-          h('button', { type: 'button', 'aria-expanded': expanded, 'aria-controls': 'dsh-peer-linked-history-list', onClick: () => setExpanded(value => !value), style: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, background: 'none', border: 0, padding: '8px 6px', fontSize: 14, fontWeight: 600, textAlign: 'left', color: 'var(--dsw-alias-label-secondary,inherit)' } },
-            h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true }, h('path', { d: expanded ? 'm4 6 4 4 4-4' : 'm6 4 4 4-4 4' })), '联动消息'),
-          h('button', { type: 'button', 'aria-label': '新建联动对话', title: connected ? '新建联动对话' : '连接另一台设备后可新建联动对话', disabled: busy || !connected, onClick: create, style: { width: 28, height: 28, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'none' } }, h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true }, h('path', { d: 'M8 3v10M3 8h10' })))),
+      return h('section', { ref: region, className: 'dsh-peer-linked-history', 'aria-label': '联动消息', style: { flex: 'none', marginTop: 6 } },
+        h('style', null, ':where(.dsh-peer-linked-history .codsh-section-toggle){display:flex;align-items:center;gap:5px;padding:0;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary,#888);font:600 12px/18px var(--dsw-font-family,system-ui);text-align:left;cursor:pointer}:where(.dsh-peer-linked-history .codsh-section-toggle svg){width:14px;height:14px;transition:transform 180ms ease}:where(.dsh-peer-linked-history .codsh-section-toggle[aria-expanded=true] svg){transform:rotate(90deg)}:where(.dsh-peer-linked-history .codsh-session){box-sizing:border-box;display:flex;align-items:center;width:100%;height:26px;min-height:26px;margin:1px 0;padding:0 8px;border:0;border-radius:7px;background:transparent;color:inherit;font:12px/18px var(--dsw-font-family,system-ui);text-align:left;cursor:pointer}:where(.dsh-peer-linked-history .codsh-session span){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}:where(.dsh-peer-linked-history .codsh-session:hover){background:var(--dsw-alias-bg-active,#8881)}.dsh-peer-linked-history button:disabled{opacity:.4;cursor:default}'),
+        h('h2', { style: { display: 'flex', alignItems: 'center', margin: 0, padding: '2px 4px 3px', fontSize: 12 } },
+          h('button', { type: 'button', className: 'codsh-section-toggle', 'aria-expanded': expanded, 'aria-controls': 'dsh-peer-linked-history-list', onClick: () => setExpanded(value => !value), style: { flex: 1 } },
+            h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, 'aria-hidden': true }, h('path', { d: 'm6 4 4 4-4 4' })), '联动消息'),
+          h('button', { type: 'button', 'aria-label': '新建联动对话', title: connected ? '新建联动对话' : '连接另一台设备后可新建联动对话', disabled: busy || !connected, onClick: create, style: { width: 20, height: 18, display: 'grid', placeItems: 'center', border: 0, borderRadius: 5, background: 'none', color: 'var(--codsh-muted,var(--dsw-alias-label-secondary,#888))', padding: 0 } }, h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true }, h('path', { d: 'M8 3v10M3 8h10' })))),
         expanded && h('div', { id: 'dsh-peer-linked-history-list', style: { overflowY: 'auto', minHeight: 0 } },
-          ...(overview?.chats || []).map(chat => h('button', { type: 'button', className: 'dsh-peer-linked-row', key: chat.id, title: chat.title, onClick: () => run(() => openConversation(chat.local ? chat.sessionId : 'peer-linked-' + chat.id)), style: { display: 'flex', width: '100%', alignItems: 'center', gap: 8, textAlign: 'left', padding: '9px 12px 9px 28px', border: 0, borderRadius: 8, background: 'transparent', boxSizing: 'border-box', fontSize: 14 } }, h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, chat.title), chat.running && h('span', { title: '正在回复', 'aria-label': '正在回复', style: { width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 } }))),
-          overview?.chats.length === 0 && h('p', { style: { margin: '4px 12px 10px 28px', fontSize: 12, opacity: .6 } }, '暂无联动消息')),
+          ...(overview?.chats || []).map(chat => h('div', { className: 'codsh-session-container', key: chat.id }, h('button', { type: 'button', className: 'codsh-session dsh-peer-linked-row', title: chat.title, onClick: () => run(() => openConversation(chat.local ? chat.sessionId : 'peer-linked-' + chat.id)), style: { gap: 8 } }, h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, chat.title), chat.running && h('span', { title: '正在回复', 'aria-label': '正在回复', style: { width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 } })))),
+          overview?.chats.length === 0 && h('p', { style: { margin: '4px 8px 6px', fontSize: 12, opacity: .6 } }, '暂无联动消息')),
         (error || failure) && h('p', { role: 'alert', style: { margin: '4px 8px', fontSize: 12, overflowWrap: 'anywhere' } }, error || failure))
     }
     // Keep the upstream browser's entry, stores, menus and slot declarations.
