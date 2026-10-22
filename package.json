@@ -1,6 +1,6 @@
 {
   "name": "dsh-peer",
-  "version": "0.1.11",
+  "version": "0.1.7",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -31,9 +31,7 @@
     "relay.js",
     "dtls-compat.js",
     "cordis.patch.yml",
-    "signal-server.js",
-    "messages.js",
-    "native-messages.js"
+    "signal-server.js"
   ],
   "dsh": {
     "bundle": {

@@ -112,17 +112,3 @@ test('manual disconnect revokes a busy peer with all RPC slots occupied', { time
   await until(() => guest.state === 'closed');
   assert.equal(guest.stopped, true);
 });
-
-test('authenticated handover replaces an occupied role without waiting for stale TCP cleanup', async t => {
-  const { WebSocket } = await import('ws');
-  const server = createSignalServer({ port: 0 }); await once(server.http, 'listening');
-  const clients=[];t.after(async()=>{for(const ws of clients)ws.terminate();await server.close();});
-  const open=async(role,resume,nonce)=>{const ws=new WebSocket('ws://127.0.0.1:'+server.http.address().port+'/peer');clients.push(ws);ws.frames=[];ws.on('message',raw=>ws.frames.push(JSON.parse(raw)));await once(ws,'open');ws.send(JSON.stringify({type:'join',room:'a'.repeat(32),access:'b'.repeat(64),role,resume,nonce}));return ws;};
-  const host=await open('host','c'.repeat(64),'1'.repeat(32)), guest=await open('guest','d'.repeat(64),'2'.repeat(32));await until(()=>guest.frames.some(f=>f.type==='ready'));
-  const epoch=guest.frames.find(f=>f.type==='ready').epoch;
-  const impostor=await open('guest','e'.repeat(64),'3'.repeat(32));await until(()=>impostor.readyState===WebSocket.CLOSED);assert.equal(host.readyState,WebSocket.OPEN);assert.equal(guest.readyState,WebSocket.OPEN);
-  const replay=await open('guest','d'.repeat(64),'2'.repeat(32));await until(()=>replay.readyState===WebSocket.CLOSED);assert.equal(guest.readyState,WebSocket.OPEN);
-  const replacement=await open('guest','d'.repeat(64),'3'.repeat(32));await until(()=>host.readyState===WebSocket.CLOSED&&guest.readyState===WebSocket.CLOSED);
-  const host2=await open('host','c'.repeat(64),'4'.repeat(32));await until(()=>replacement.frames.some(f=>f.type==='ready'));
-  const ready=replacement.frames.find(f=>f.type==='ready');assert.notEqual(ready.epoch,epoch);assert.equal(ready.nonces.guest,'3'.repeat(32));assert.equal(ready.nonces.host,'4'.repeat(32));assert.equal(host2.readyState,WebSocket.OPEN);
-});
