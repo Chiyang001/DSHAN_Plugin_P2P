@@ -5,6 +5,9 @@ import { createPair, registerShortPair, resolvePair } from './protocol.js';
 import { androidHostAddresses } from './network.js';
 import { isIP } from 'node:net';
 import QRCode from 'qrcode';
+import { LinkedMessages } from './messages.js';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export const name = 'dsh-peer';
 export const inject = ['tools', 'agents'];
@@ -32,6 +35,13 @@ function acceptSettingsWrite(req) {
 
 export function apply(ctx, config = {}) {
   let peer, allowed = new Set(), shareAll = false, executionQueue = Promise.resolve(), hostingShortCode;
+  const linked = new LinkedMessages({
+    file: config.messageStore ?? join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'peer-messages', 'state.json'),
+    controller: () => ctx.get('sessionController'), peer: () => peer,
+    label: process.env.DSH_ANDROID_BRIDGE_TOKEN ? 'Android 手机' : '电脑',
+  });
+  ctx.on('session/event', (session, event) => linked.observeEvent(session.id, event), { global: true });
+  ctx.on('agent/assistant-stream', ({ agent, frame }) => linked.observeStream(agent.session.id, frame), { global: true });
   const callableTools = agent => ctx.tools.schemas(agent).filter(tool => !tool.name.startsWith('peer_') && tool.name !== 'run_code' && ctx.tools.resolveExecution(tool.name, agent, false));
   const liveAgents = () => ctx.agents.list().filter(agent => ctx.agents.get(agent.id) === agent);
   const availableTools = () => {
@@ -41,6 +51,7 @@ export function apply(ctx, config = {}) {
   };
   const schemas = () => [...availableTools().values()].filter(({ schema }) => shareAll || allowed.has(schema.name)).map(({ schema }) => schema);
   const dispatch = async (method, args, signal) => {
+    if (method.startsWith('messages.')) return linked.dispatch(method, args, signal);
     if (method === 'list') return schemas();
     if (method !== 'call' || !args || typeof args.name !== 'string') throw new Error('Invalid remote tool call');
     const run = async () => {
@@ -66,10 +77,11 @@ export function apply(ctx, config = {}) {
     return result;
   };
   const stop = async () => {
+    linked.disconnected();
     allowed.clear(); shareAll = false; hostingShortCode = undefined;
     const old = peer; peer = undefined; await old?.close();
   };
-  ctx.on('dispose', stop);
+  ctx.on('dispose', async () => { await stop(); await linked.dispose(); });
   const textOutput = { schema: { type: 'string' }, render: (_args, result) => [{ type: 'text', text: result }] };
   const register = (toolName, description, parameters, execute, output = textOutput) => ctx.tools.register(defineTool({ name: toolName, description, parameters, output, execute }));
   const string = description => ({ type: 'string', required: true, description });
@@ -96,6 +108,7 @@ export function apply(ctx, config = {}) {
     await stop();
     allowed = new Set(policy.names); shareAll = policy.all;
     peer = new Peer({ pair, role, iceServers, hostAddresses, refreshHostAddresses: () => androidHostAddresses(), relayOnly: config.relayOnly === true, dispatch });
+    linked.start();
   };
   const status = () => ({
     ...(peer?.status() ?? { state: 'disconnected' }),
@@ -125,6 +138,26 @@ export function apply(ctx, config = {}) {
   };
   // Device pairing outlives sessions. Each incoming call resolves live tools and uses their local permission pipeline.
   ctx.inject(['webServer', 'connection'], scope => {
+    scope.effect(() => scope.webServer.register({ kind: 'exact', path: '/peer/messages', async handler(req, res) {
+      if (!scope.connection.authorizeIndex(req, res)) return;
+      res.setHeader('cache-control', 'no-store'); res.setHeader('content-type', 'application/json; charset=utf-8');
+      try {
+        if (req.method === 'GET') { res.end(JSON.stringify(await linked.overview())); return; }
+        if (req.method !== 'POST') { res.writeHead(405); res.end('{}'); return; }
+        if (!acceptSettingsWrite(req)) { res.writeHead(403); res.end(JSON.stringify({ error: '请求来源无效' })); return; }
+        let body = '';
+        for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 300000) throw new Error('请求内容过长'); }
+        res.end(JSON.stringify(await linked.action(JSON.parse(body))));
+      } catch (error) { res.writeHead(400); res.end(JSON.stringify({ error: error.message })); }
+    } }), 'Linked messages API');
+    scope.effect(() => scope.webServer.register({ kind: 'exact', path: '/peer/messages/events', handler(req, res) {
+      if (!scope.connection.authorizeIndex(req, res)) return;
+      if (req.method !== 'GET') { res.writeHead(405); res.end(); return; }
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+      res.write('data: changed\n\n'); linked.clients.add(res);
+      const timer = setInterval(() => res.write(': heartbeat\n\n'), 15000); timer.unref();
+      res.on('close', () => { clearInterval(timer); linked.clients.delete(res); });
+    } }), 'Linked messages updates');
     scope.effect(() => scope.webServer.register({ kind: 'exact', path: '/peer/settings', async handler(req, res) {
       if (!scope.connection.authorizeIndex(req, res)) return;
       res.setHeader('cache-control', 'no-store');

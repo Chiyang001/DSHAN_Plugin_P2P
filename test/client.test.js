@@ -49,9 +49,11 @@ test('registers the connection settings section', () => {
   })
   assert.deepEqual(
     slots.map(({ options }) => `${options.name}#${options.id}`),
-    ['settings.section#connection'],
+    ['settings.section#connection', 'sidebar.panellist#peer-messages', 'main#undefined'],
   )
   assert.equal(slots[0].options.label(), '连接')
+  assert.equal(slots[1].options.label(), '联动消息')
+  assert.equal(slots[2].options.key, 'peer-messages')
 })
 
 function renderSettings(state, android = false) {
