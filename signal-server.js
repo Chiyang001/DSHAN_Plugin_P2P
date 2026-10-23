@@ -86,9 +86,14 @@ export function createSignalServer({ port = 8787, host = '127.0.0.1', ttl = 10 *
             room = { id: msg.room, access: msg.access, peers: {}, resumes: {}, nonces: {}, expires: Date.now() + ttl };
             rooms.set(msg.room, room);
           }
-          if (room.access !== msg.access || room.peers[msg.role] || (room.used && room.resumes[msg.role] !== msg.resume) || (room.used && !msg.resume) || Date.now() >= room.expires) throw new Error('Pair unavailable');
+          if (room.access !== msg.access || room.revoked || (room.used && room.resumes[msg.role] !== msg.resume) || (room.used && !msg.resume) || Date.now() >= room.expires) throw new Error('Pair unavailable');
           if (msg.resume !== undefined && !/^[a-f0-9]{64}$/.test(msg.resume)) throw new Error('Invalid resume token');
           if (msg.nonce !== undefined && !/^[a-f0-9]{32}$/.test(msg.nonce)) throw new Error('Invalid nonce');
+          if (room.peers[msg.role]) {
+            if (!room.used || !msg.resume || room.resumes[msg.role] !== msg.resume || !msg.nonce || room.nonces[msg.role] === msg.nonce) throw new Error('Pair unavailable');
+            const previous = Object.values(room.peers); room.peers = {}; room.expires = Date.now() + 24 * 60 * 60_000;
+            for (const member of previous) member.close(1012, 'Authenticated network handover');
+          }
           role = msg.role; room.nonces[role] = msg.nonce; room.resumes[role] ??= msg.resume; room.peers[role] = ws; clearTimeout(joinTimer);
           ws.send(JSON.stringify({ type: 'waiting' }));
           if (room.peers.host && room.peers.guest) {
