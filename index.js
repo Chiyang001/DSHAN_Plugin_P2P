@@ -14,11 +14,15 @@ import { join } from 'node:path';
 
 export const name = 'dsh-peer';
 export const inject = ['tools', 'agents'];
-export const DEFAULT_SIGNALING_SERVER = 'ws://dshanp2p.chiyang001.top/peer';
+export const DEFAULT_SIGNALING_SERVER = 'wss://dshanp2p.chiyang001.top/peer';
 
 export function resolveSignalingServer(...values) {
   for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'string' && value.trim()) {
+      const server = value.trim();
+      // Existing profiles may still contain the former public HTTP endpoint.
+      return server === 'ws://dshanp2p.chiyang001.top/peer' ? DEFAULT_SIGNALING_SERVER : server;
+    }
   }
   return DEFAULT_SIGNALING_SERVER;
 }

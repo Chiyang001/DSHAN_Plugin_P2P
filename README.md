@@ -19,7 +19,7 @@
 
 ## 快速开始
 
-需要 Node.js 22 或更新版本与 DeepSeek Harness，当前开发测试使用 Harness 0.2.0-rc.2。手机使用 [DSHAN](https://github.com/Chiyang001/DSHAN) 1.2.8 内置插件。
+需要 Node.js 22 或更新版本与 DeepSeek Harness，当前开发测试使用 Harness 0.2.0-rc.2。手机使用 [DSHAN](https://github.com/Chiyang001/DSHAN) 1.2.9 内置插件。
 
 在电脑的 Harness 插件管理页面安装 GitHub 仓库：
 
@@ -59,6 +59,11 @@ npm ci --omit=dev --ignore-scripts
 4. 手机工具依赖 DSHAN 内置的 ADB/Shizuku 桥接和相应控制权限，电脑不用另外安装 ADB。
 
 连接页会根据手机或桌面显示对应文案，提供状态、二维码、连接方式和共享工具信息。
+
+## 0.1.22 更新
+
+- 同步 DSHAN 1.2.9 内置的连接插件，默认配对服务器改为 `wss://dshanp2p.chiyang001.top/peer`，修复 HTTPS 入口返回 308 导致信令连接失败。
+- 旧配置中保存的官方 `ws://` 地址自动转为 WSS，其他自定义服务器地址保持原样。
 
 ## 0.1.21 更新
 
@@ -122,7 +127,9 @@ npm test
 
 ### 默认配对服务器（0.1.6）
 
-安装包与运行时均提供默认服务器 `ws://dshanp2p.chiyang001.top/peer`。未填写地址或地址为空白时自动使用默认值，显式工具参数和自定义 profile 地址优先。创建配对、加入配对与状态页使用一致的地址选择规则。
+安装包与运行时均提供默认服务器 `wss://dshanp2p.chiyang001.top/peer`。未填写地址或地址为空白时自动使用默认值，显式工具参数和自定义 profile 地址优先。创建配对、加入配对与状态页使用一致的地址选择规则。
+
+旧配置中的官方地址 `ws://dshanp2p.chiyang001.top/peer` 会自动按上述 WSS 地址连接，避免 HTTPS 入口返回 308 重定向导致 WebSocket 握手失败；其他自定义服务器地址保持原样。升级后重新加载插件或重启应用，再生成配对码并配对。
 
 ### 自动重连与网络恢复（0.1.7）
 

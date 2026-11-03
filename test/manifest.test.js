@@ -11,6 +11,8 @@ test('plugin manifest declares a loadable Harness bundle with the peer component
   const paths = bundlePatchPaths(packageDir, manifest.dsh.bundle);
   const patches = paths.flatMap(path => loadOverlayPatches('dsh', path));
   assert.ok(patches.some(patch => patch.insert?.some(row => row.id === 'dsh-peer' && row.name === 'dsh-peer')));
+  const peer = patches.flatMap(patch => patch.insert || []).find(row => row.id === 'dsh-peer');
+  assert.equal(peer.config.signalingServer, 'wss://dshanp2p.chiyang001.top/peer');
   assert.ok(manifest.files.includes('cordis.patch.yml'));
 });
 

@@ -134,13 +134,15 @@ test('devices pair with no sessions and restore tools without reconnecting', { t
 
 
 test('missing and blank profile settings use a consistent default pairing server', async () => {
-  for (const value of [undefined, null, '', '   ']) {
+  assert.equal(DEFAULT_SIGNALING_SERVER, 'wss://dshanp2p.chiyang001.top/peer');
+  for (const value of [undefined, null, '', '   ', 'ws://dshanp2p.chiyang001.top/peer', ' ws://dshanp2p.chiyang001.top/peer ']) {
     const device = harness('defaults', { signalingServer: value });
     assert.equal(JSON.parse((await device.request()).body).signalingServer, DEFAULT_SIGNALING_SERVER);
     assert.equal(resolveSignalingServer(value), DEFAULT_SIGNALING_SERVER);
   }
   assert.equal(resolveSignalingServer(' ', ' wss://custom.example/peer '), 'wss://custom.example/peer');
   assert.equal(resolveSignalingServer('wss://override.example/peer', 'wss://custom.example/peer'), 'wss://override.example/peer');
+  assert.equal(resolveSignalingServer('ws://custom.example/peer'), 'ws://custom.example/peer');
 });
 
 test('blank host input retains the configured server and pairing works without sessions', async t => {
