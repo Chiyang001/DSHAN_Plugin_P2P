@@ -1,6 +1,6 @@
 {
   "name": "dsh-peer",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "ws": "8.22.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-tools": "^0.1.7-rc.2 || ^0.2.0-rc.2"
+    "@deepseek-ai/dsh-tools": "^0.1.7-rc.2 || ^0.2.0-rc.2 || ^0.2.1-0 || ^0.2.2-0"
   },
   "exports": {
     ".": "./index.js",
@@ -24,6 +24,7 @@
   },
   "files": [
     "index.js",
+    "tools-compat.js",
     "client.js",
     "peer.js",
     "messages.js",

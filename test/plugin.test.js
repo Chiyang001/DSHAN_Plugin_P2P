@@ -5,7 +5,7 @@ import { apply, DEFAULT_SIGNALING_SERVER, resolveSignalingServer } from '../inde
 import { createSignalServer } from '../signal-server.js';
 import { SHORT_CODE_RE } from '../protocol.js';
 
-function harness(id, config = {}) {
+function harness(id, config = {}, api = 'single') {
   const agent = { id }, other = { id: id + '-other' };
   const tools = new Map(), events = new Map(), pipeline = [], saved = [];
   let live = agent;
@@ -13,8 +13,7 @@ function harness(id, config = {}) {
     agents: { get: key => key === live?.id ? live : undefined, list: () => live ? [live] : [], withInitiator: (_agent, action) => action() },
     tools: {
       register: tool => tools.set(tool.name, tool),
-      schemas: () => ['screen', 'denied', 'hidden', 'run_code'].map(name => ({ name, description: name, parameters: { type: 'object', properties: {} } })),
-      resolveExecution: name => name !== 'hidden',
+      schemas: () => ['screen', 'denied', 'run_code'].map(name => ({ name, description: name, parameters: { type: 'object', properties: {} } })),
       execute: async exec => {
         pipeline.push(exec);
         if (exec.name === 'denied') return { isError: true, content: [{ type: 'text', text: 'Local permission denied' }] };
@@ -28,6 +27,12 @@ function harness(id, config = {}) {
     on: (name, action) => events.set(name, action),
     inject: (_names, setup) => setup({ effect: fn => fn(), webServer: { register: route => { ctx.route = route; return () => {}; } }, connection: { authorizeIndex: (req, res) => { if (!req.authorized) { res.writeHead(401); res.end('{}'); } return req.authorized; } } }),
   };
+  if (api === 'batch') {
+    const executeSingle = ctx.tools.execute;
+    ctx.tools.setExecutor = () => {};
+    ctx.tools.executable = name => name !== 'hidden' ? {} : undefined;
+    ctx.tools.execute = async ({ calls, agent, signal }) => ({ results: await Promise.all(calls.map(async call => ({ callId: call.id, result: await executeSingle({ callId: call.id, name: call.name, arguments: JSON.parse(call.arguments), agent, signal }) }))) });
+  }
   apply(ctx, config);
   const call = (name, args = {}, caller = agent) => tools.get(name).execute(args, { agent: caller, signal: new AbortController().signal });
   const request = async (method = 'GET', input = {}, origin = 'http://localhost:3080', authorized = true) => {
@@ -45,10 +50,10 @@ function shortCodeFromOutput(output) {
   return match[1];
 }
 
-test('device sharing survives session deletion while enforcing allowlist and local permissions', { timeout: 30000 }, async t => {
+for (const api of ['single', 'batch']) test(`device sharing survives session deletion while enforcing allowlist and local permissions (${api})`, { timeout: 30000 }, async t => {
   const server = createSignalServer({ port: 0 }); await once(server.http, 'listening');
   const url = `ws://127.0.0.1:${server.http.address().port}`;
-  const phone = harness('phone', { signalingServer: url }), desktop = harness('desktop', { signalingServer: url });
+  const phone = harness('phone', { signalingServer: url }, api), desktop = harness('desktop', { signalingServer: url });
   t.after(async () => { await phone.call('peer_disconnect'); await desktop.call('peer_disconnect'); await server.close(); });
   await assert.rejects(phone.call('peer_host', { server: url, tools: 'run_code' }), /individual tools/);
   await assert.rejects(phone.call('peer_host', { server: url, tools: 'hidden' }), /unavailable/);

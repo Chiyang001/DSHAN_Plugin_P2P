@@ -1,4 +1,4 @@
-<p align="center"><a href="https://space.bilibili.com/404891612"><img src="assets/developer.png" width="112" height="112" alt="炽阳001" align="middle"></a><img src="assets/divider.svg" width="32" height="112" alt="分隔线" align="middle"><a href="https://github.com/Chiyang001/DSHAN_Plugin_P2P"><img src="assets/icon.png" width="112" height="112" alt="DSHAN P2P 插件 Logo" align="middle"></a></p>
+<p align="center"><a href="https://github.com/Chiyang001/DSHAN_Plugin_P2P"><img src="assets/icon.png" width="112" height="112" alt="DSHAN P2P 插件 Logo" align="middle"></a><img src="assets/divider.svg" width="32" height="112" alt="分隔线" align="middle"><a href="https://space.bilibili.com/404891612"><img src="assets/developer-rounded.svg" width="112" height="112" alt="炽阳001" align="middle"></a></p>
 
 <h1 align="center">DSHAN Plugin P2P</h1>
 <p align="center"><strong>连接手机与电脑，让两端的工具协同工作。</strong></p>
@@ -19,7 +19,7 @@
 
 ## 快速开始
 
-需要 Node.js 22 或更新版本与 DeepSeek Harness，当前开发测试使用 Harness 0.2.0-rc.2。手机使用 [DSHAN](https://github.com/Chiyang001/DSHAN) 1.2.9 内置插件。
+需要 Node.js 22 或更新版本与 DeepSeek Harness，已验证 Harness 工具运行库 0.1.7-rc.2、0.2.0-rc.2、0.2.1-rc.2、0.2.2-rc.1 和 0.2.2-rc.2。手机使用 DSHAN 1.3.2 内置的 0.1.23 连接插件，配套内核为 0.2.2-rc.2。
 
 在电脑的 Harness 插件管理页面安装 GitHub 仓库：
 
@@ -142,3 +142,12 @@ npm test
 升级时需同时更新电脑插件、手机内置插件和 [DSHAN Server](https://github.com/Chiyang001/DSHAN/tree/main/Server)，并重启 Python 服务加载新协议。
 
 2026-10-21 已使用 OPPO PKQ110、Android 16 的正式 Release APK 与真实电脑 Harness，通过公网完成 auto/relay 两轮切网验收。Wi-Fi 与移动流量切换、完全断网 45 秒后的自动恢复、双向工具调用及手动断开停止重连均通过。完全断线后恢复 Wi-Fi，本次约 21–30 秒恢复，包含轮询及双向调用校验；不同网络耗时会变化。
+
+
+### DSH 内核兼容（0.1.23）
+
+修复 DSH 0.2.2-rc.1 更新后连接页报 `ctx.tools.resolveExecution is not a function` 的问题。插件仅使用公开工具接口，按接口能力兼容旧版单次执行与新版批量执行，不依赖内核版本号或私有方法。普通共享和联动会话共用适配层，保留本机作用域、条件工具限制、审批、权限与取消管线。执行失败或返回结构改变时不会换接口自动重试，避免重复执行操作。
+
+开发验证：`npm test`。验证另一个已安装内核时，将 `DSH_PEER_TEST_KERNEL` 设为该内核的目录，再运行 `node --test test/registry.test.js`；新版内核需安装对应的 `@deepseek-ai/dsh-tool-executor-native`。未来内核若改变公开接口仍需适配，不能保证任意后续版本无需更新插件。
+
+手机内核更新在标记可启用之前，会使用隔离的内存工具验证连接插件的作用域、执行接口、结果格式和权限拒绝；验证失败会提示先更新 APK，不会启用该内核。该检查不能覆盖未来内核的所有变化，但可以提前拦截当前这类接口不兼容。

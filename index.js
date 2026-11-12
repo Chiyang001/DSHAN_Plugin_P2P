@@ -11,6 +11,7 @@ import { installNativeMessages } from './native-messages.js';
 import { installLinkedWorkspace, installLinkedDeletion, installLinkedThemeActions } from './lifecycle.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { peerToolSchemas, executePeerTool } from './tools-compat.js';
 
 export const name = 'dsh-peer';
 export const inject = ['tools', 'agents'];
@@ -60,14 +61,14 @@ export function apply(ctx, config = {}) {
   ctx.inject(['sessionController'], scope => { if (!ctx.get('sessionController')) return; const dispose = installNativeMessages(scope, linked); scope.on('dispose', dispose); });
   ctx.on('session/event', (session, event) => linked.observeEvent(session.id, event), { global: true });
   ctx.on('agent/assistant-stream', ({ agent, frame }) => linked.observeStream(agent.session.id, frame), { global: true });
-  const callableTools = agent => ctx.tools.schemas(agent).filter(tool => !tool.name.startsWith('peer_') && tool.name !== 'run_code' && ctx.tools.resolveExecution(tool.name, agent, false));
+  const callableTools = agent => peerToolSchemas(ctx.tools, agent);
   const linkedChatFor = agent => Object.values(linked.data?.chats ?? {}).find(chat => !chat.removed && [chat.sessionId, 'peer-linked-' + chat.id, 'peer-toolhost-' + chat.id].includes(agent?.session?.id ?? agent?.id));
   linked.executeLinkedTool = async (chat, method, args, signal) => {
     const agent = await linked.toolContext(chat), schemas = callableTools(agent);
     if (method === 'messages.tools') return schemas;
     if (typeof args.name !== 'string' || !schemas.some(tool => tool.name === args.name)) throw Error('本机没有可用的此联动工具');
     return ctx.agents.withInitiator(agent, async () => {
-      const result = await ctx.tools.execute({ callId: 'peer-linked:' + randomUUID(), name: args.name, arguments: args.arguments, agent, signal });
+      const result = await executePeerTool(ctx.tools, { callId: 'peer-linked:' + randomUUID(), name: args.name, arguments: args.arguments, agent, signal });
       const content = [];
       for (const block of result.content) {
         if (block.type === 'text') content.push(block);
@@ -95,7 +96,7 @@ export function apply(ctx, config = {}) {
       if (!shareAll && !allowed.has(args.name) || args.name.startsWith('peer_') || args.name === 'run_code') throw new Error('Tool is not shared');
       const agent = availableTools().get(args.name)?.agent;
       if (!agent) throw new Error('设备仍保持连接，但此工具当前不可用。请在对方设备打开启用该工具的会话后再调用。');
-      const result = await ctx.agents.withInitiator(agent, () => ctx.tools.execute({ callId: 'peer:' + randomUUID(), name: args.name, arguments: args.arguments, agent, signal }));
+      const result = await ctx.agents.withInitiator(agent, () => executePeerTool(ctx.tools, { callId: 'peer:' + randomUUID(), name: args.name, arguments: args.arguments, agent, signal }));
       const content = [];
       for (const block of result.content) {
         if (block.type === 'text') content.push(block);
